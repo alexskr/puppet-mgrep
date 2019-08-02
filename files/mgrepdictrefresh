@@ -1,0 +1,48 @@
+#!/bin/env python
+# Script for restarting mgrep daemon when dictionary file is updated.
+# it checks time stamp left by ncbo_cron in the redis when dictionary file is generated.
+# It should be sheduled with cron
+#
+# Requires redis python module (yum install python-redis)
+# 
+# author: Alex Skrenchuk
+
+import time
+import datetime
+import subprocess
+import redis
+import sys, getopt
+
+#set default redis host
+redishost='localhost'
+verbose=False
+
+# Read command line args
+myopts, args = getopt.getopt(sys.argv[1:],"r:v")
+
+for o, a in myopts:
+    if o == '-r':
+        redishost = a
+    if o == '-v':
+        verbose = True
+
+r_server = redis.Redis(redishost)
+
+last_mgrep_restart_stamp = r_server.get("last_mgrep_restart_stamp")
+mgrep_dict_refresh_stamp = r_server.get("mgrep_dict_refresh_stamp")
+
+if verbose == True:
+  print ("checking dictionary generation time stamp on redis host %s" % redishost)
+  print ("last_mgrep_restart_stamp = %s" % last_mgrep_restart_stamp)
+  print ("mgrep_dict_refresh_stamp = %s" % mgrep_dict_refresh_stamp)
+
+if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp:
+  if verbose == True:
+    print "new dictionary file is detected, restarting mgrep"
+  ts = time.time()
+  st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+  subprocess.call(["/bin/systemctl", "mgrep.service", "restart"])
+  r_server.set('last_mgrep_restart_stamp', st)
+else:
+ if verbose == True:
+   print "new dictionary file is NOT detected"

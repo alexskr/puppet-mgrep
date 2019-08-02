@@ -1,0 +1,71 @@
+#!/bin/bash
+#
+# chkconfig: 35 90 12
+# description: mgrep 4.x server
+#
+#
+
+# Get function from functions library
+. /etc/init.d/functions
+
+lockfile=/var/lock/subsys/mgrep
+pidfile=var/run/mgrep.pid
+RETVAL=0
+
+mgrep_verison=4.0.2
+
+#Defautls, can be overwritten by /etc/sysconfig/mgrep
+mgrep_home=/usr/local/mgrep-$mgrep_verison
+mgrepd=$mgrep_home/mgrep
+mgrep_dict=/srv/mgrep/dictionary/dict
+
+[ -e /etc/sysconfig/mgrep ] && . /etc/sysconfig/mgrep
+
+# Start the service mgrep
+start() {
+    daemon --user "mgrep" --pidfile $pidfile  "$mgrepd  -f $mgrep_dict -w $mgrep_home/word_divider.txt -c $mgrep_home/CaseFolding.txt --port=55555"
+    RETVAL=$?
+    echo
+    [ $RETVAL = 0 ] && touch ${lockfile}
+    return $RETVAL
+#    success $"mgrep $mgrep_verison server startup"
+    echo
+}
+
+# Restart the service mgrep
+stop() {
+    #initlog -c "echo -n Stopping mgrep $mgrep_verison server: "
+    killproc mgrep
+    RETVAL=$?
+    echo
+    [ $RETVAL = 0 ] && rm -f ${lockfile} ${pidfile}
+}
+
+rh_status() {
+    status $pidopts $mgrepd
+    RETVAL=$?
+    return $RETVAL
+}
+
+### main logic ###
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  status)
+        #status mgrep
+        rh_status
+        ;;
+  restart|reload|condrestart)
+        stop
+        start
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|restart|reload|status}"
+        exit 1
+esac
+
+exit 0

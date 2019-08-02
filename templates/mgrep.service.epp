@@ -1,0 +1,25 @@
+<%- |
+  String $user,
+  String $group,
+  Integer $port,
+  Stdlib::Absolutepath $mgrep_dict,
+| -%>
+
+[Unit]
+Description=mgrep server running on port <%= $port %>
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/mgrep/mgrep --port=<%= $port %> -f <%= $mgrep_dict %> -w /usr/local/mgrep/word_divider.txt -c /usr/local/mgrep/CaseFolding.txt
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=mgrep
+User=<%= $user %>
+Group=<%= $group %>
+PermissionsStartOnly=false
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
+
