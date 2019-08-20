@@ -54,7 +54,7 @@ define mgrep::instance (
       'mgrep_dict' => $dict_path,
     }),
   }
-  service { "mgrep-${port}":
+  ~> service { "mgrep-${port}":
     enable    => $mgrep_enable,
     hasstatus => true,
   }

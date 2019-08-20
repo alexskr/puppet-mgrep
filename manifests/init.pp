@@ -82,7 +82,7 @@ class mgrep (
           'mgrep_dict' => $dict_path,
         }),
       }
-      service { 'mgrep':
+      ~> service { 'mgrep':
         enable    => $mgrep_enable,
         hasstatus => true,
       }
@@ -102,7 +102,7 @@ class mgrep (
         require => File["/usr/local/mgrep-${mgrep_version}"],
         notify  => Service['mgrep'],
       }
-      service { 'mgrep':
+      ~> service { 'mgrep':
         enable  => $mgrep_enable,
         require => File['/etc/init.d/mgrep']
       }
@@ -113,7 +113,8 @@ class mgrep (
   if ($dict_symlink != undef) {
     file { [ "/var/lib/mgrep/${port}/dict" ]:
       ensure => link,
-      target => $dict_symlink
+      target => $dict_symlink,
+      before => Service['mgrep'],
     }
   } else {
     file { $dict_path:
@@ -123,6 +124,7 @@ class mgrep (
       mode    => '0664',
       owner   => $user,
       group   => $group,
+      before  => Service['mgrep'],
     }
   }
 }
