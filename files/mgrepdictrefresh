@@ -4,7 +4,7 @@
 # It should be sheduled with cron
 #
 # Requires redis python module (yum install python-redis)
-# 
+# CentOS 7
 # author: Alex Skrenchuk
 
 import time
@@ -18,7 +18,7 @@ redishost='localhost'
 verbose=False
 
 # Read command line args
-myopts, args = getopt.getopt(sys.argv[1:],"r:v")
+myopts, args = getopt.getopt(sys.argv[1:],'r:v')
 
 for o, a in myopts:
     if o == '-r':
@@ -41,8 +41,8 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp:
     print "new dictionary file is detected, restarting mgrep"
   ts = time.time()
   st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-  subprocess.call(["/bin/systemctl", "mgrep.service", "restart"])
+  subprocess.call(['/bin/systemctl', 'restart', 'mgrep.service'])
   r_server.set('last_mgrep_restart_stamp', st)
 else:
  if verbose == True:
-   print "new dictionary file is NOT detected"
+   print 'new dictionary file is NOT detected'
