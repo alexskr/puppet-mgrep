@@ -1,7 +1,7 @@
 <%- |
   String $user,
   String $group,
-  Integer $port,
+  Stdlib::Port $port,
   Stdlib::Absolutepath $mgrep_dict,
 | -%>
 

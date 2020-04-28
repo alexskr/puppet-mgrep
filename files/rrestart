@@ -56,13 +56,13 @@ for o, a in myopts:
 r = redis.StrictRedis(host=redishost, port=redisport)
 
 try:
-  last_mgrep_restart_stamp = r.get("last_mgrep_restart_stamp")
-  mgrep_dict_refresh_stamp = r.get("mgrep_dict_refresh_stamp")
+  last_mgrep_restart_stamp = r.get('last_mgrep_restart_stamp')
+  mgrep_dict_refresh_stamp = r.get('mgrep_dict_refresh_stamp')
 except redis.ConnectionError:
   sys.exit("can't connect to redis running on %s" % redishost)
 
 if last_mgrep_restart_stamp == None or mgrep_dict_refresh_stamp == None:
-  sys.exit("Timestamp entries are missing in redis. Perhaps it is not initiated properly.")
+  sys.exit('Timestamp entries are missing in redis. Perhaps it is not initiated properly.')
 
 if verbose == True:
   print ("checking dictionary generation timestamp on redis host %s" % redishost)
@@ -71,7 +71,7 @@ if verbose == True:
 
 if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   if verbose == True:
-    print "dictionary update is detected, restarting mgrep"
+    print 'dictionary update is detected, restarting mgrep'
   ts = time.time()
   st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -101,17 +101,20 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   # 4. Master node will wait to restart mgrep untill it sees the message send by slave node
   # 5. Master node updates the last mgrep server restart time.
 
-  while not r.setnx("mgrep_restart_lock", hostname):
+  while not r.setnx('mgrep_restart_lock', hostname):
     lockedoutby = r.get('mgrep_restart_lock')
     if verbose == True:
       print ("waiting for lock on %s" % lockedoutby )
     time.sleep(1)
   if verbose == True:
-     print "got the lock"
-  r.setex("mgrep_restart_lock", 300, hostname)
+     print 'got the lock'
+  r.setex('mgrep_restart_lock', 300, hostname)
   if verbose == True:
     print ("restarting mgrep service %s" % service)
-  subprocess.call(["/bin/systemctl", "mgrep.service", "restart"])
+  if subprocess.call(['/bin/systemctl', 'restart',  'mgrep.service']):
+    sys.exit('unable to restart mgrep service')
+  else:
+    r_server.set('last_mgrep_restart_stamp', st)
   time.sleep(10)
 
   r.delete('mgrep_restart_lock')
@@ -121,7 +124,7 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   if master == True:
     r.set('last_mgrep_restart_stamp', st)
   if verbose == True:
-    print "all done"
+    print 'all done'
 else:
- if verbose == True:
-   print "new dictionary file is NOT detected"
+  if verbose == True:
+   print 'new dictionary file is NOT detected'

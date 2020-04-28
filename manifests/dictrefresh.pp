@@ -2,7 +2,8 @@
 class mgrep::dictrefresh {
   #script to restart mgrep if dictionary file was updated.
   #script to restart mgrep server if flag was set in redis
-  ensure_packages(['python-redis'])
+  require epel
+  ensure_packages(['python2-redis'])
 
   file { '/usr/local/bin/mgrepdictrefresh':
     ensure => present,

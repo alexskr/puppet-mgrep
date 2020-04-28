@@ -4,7 +4,7 @@
 # It should be sheduled with cron
 #
 # Requires redis python module (yum install python-redis)
-# CentOS 7
+# 
 # author: Alex Skrenchuk
 
 import time
@@ -18,7 +18,7 @@ redishost='localhost'
 verbose=False
 
 # Read command line args
-myopts, args = getopt.getopt(sys.argv[1:],'r:v')
+myopts, args = getopt.getopt(sys.argv[1:],"r:v")
 
 for o, a in myopts:
     if o == '-r':
@@ -28,8 +28,8 @@ for o, a in myopts:
 
 r_server = redis.Redis(redishost)
 
-last_mgrep_restart_stamp = r_server.get("last_mgrep_restart_stamp")
-mgrep_dict_refresh_stamp = r_server.get("mgrep_dict_refresh_stamp")
+last_mgrep_restart_stamp = r_server.get('last_mgrep_restart_stamp')
+mgrep_dict_refresh_stamp = r_server.get('mgrep_dict_refresh_stamp')
 
 if verbose == True:
   print ("checking dictionary generation time stamp on redis host %s" % redishost)
@@ -38,11 +38,13 @@ if verbose == True:
 
 if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp:
   if verbose == True:
-    print "new dictionary file is detected, restarting mgrep"
+    print 'new dictionary file is detected, restarting mgrep'
   ts = time.time()
   st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-  subprocess.call(['/bin/systemctl', 'restart', 'mgrep.service'])
-  r_server.set('last_mgrep_restart_stamp', st)
+  if subprocess.call(['/bin/systemctl', 'restart',  'mgrep.service']):
+    sys.exit('unable to restart mgrep service')
+  else:
+    r_server.set('last_mgrep_restart_stamp', st)
 else:
  if verbose == True:
    print 'new dictionary file is NOT detected'

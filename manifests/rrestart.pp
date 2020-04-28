@@ -22,12 +22,8 @@ class mgrep::rrestart (
   Boolean $verbose   = true,
 ) inherits mgrep::params {
 
-  if ! defined(Package['python-pip'])  { package { 'python-pip':  ensure => installed } }
-  package { 'redis':
-    ensure   => installed,
-    provider => 'pip',
-    require  => Package['python-pip']
-  }
+  include epel
+  ensure_packages(['python-redis'])
 
   file { "/usr/local/mgrep-${mgrep_version}/bin/rrestart":
     ensure => present,

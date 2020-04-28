@@ -14,14 +14,14 @@
 
 
 define mgrep::instance (
-  Boolean $mgrep_enable = true,
-  $mgrep_version        = $mgrep::params::mgrep_version,
-  Integer $port         = 55556,
-  $dict_path            = "/var/lib/mgrep/${port}/dictionary",
-  $dict_symlink         = undef,
-  String $user          = $mgrep::params::user,
-  String $group         = $mgrep::params::group,
-  String $redishost     = $mgrep::params::redishost
+  Boolean $mgrep_enable            = true,
+  String $mgrep_version            = $mgrep::params::mgrep_version,
+  Stdlib::Port $port               = 55556,
+  Stdlib::Absolutepath $dict_path  = "/var/lib/mgrep/${port}/dictionary",
+  $dict_symlink                    = undef,
+  String $user                     = $mgrep::params::user,
+  String $group                    = $mgrep::params::group,
+  String $redishost                = $mgrep::params::redishost
 ) {
 
   if ($facts['os']['family'] != 'RedHat') { fail ('unsupported OS') }
