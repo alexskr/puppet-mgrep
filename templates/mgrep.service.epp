@@ -18,6 +18,7 @@ SyslogIdentifier=mgrep
 User=<%= $user %>
 Group=<%= $group %>
 PermissionsStartOnly=false
+TimeoutSec=900
 TimeoutStopSec=10
 
 [Install]
