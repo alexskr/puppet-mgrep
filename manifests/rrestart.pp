@@ -10,45 +10,35 @@
 # Requires:
 #
 # Sample Usage:
-
-
 class mgrep::rrestart (
-  $mgrep_initdscript = $mgrep::params::mgrep_initdscript,
-  $mgrep_redishost   = $mgrep::params::mgrep_redishost,
-  $mgrep_redisport   = $mgrep::params::mgrep_redisport,
-  Boolean $mgrep_master = false,
-  $mgrep_version     = $mgrep::params::mgrep_version,
-  $mgrep_cronfreq    = $mgrep::params::mgrep_cronfreq,
-  Boolean $verbose   = true,
-) inherits mgrep::params {
+  Stdlib::Host $redis_host = 'localhost',
+  StdLib::Port $redis_port = 6379,
+  Boolean $mgrep_primary   = false,
+  String $cron_string      = '*/5 * * * *',
+  Boolean $verbose         = true,
+) {
 
-  include epel
-  ensure_packages(['python-redis'])
+  ensure_packages(['python3-redis'])
 
-  file { "/usr/local/mgrep-${mgrep_version}/bin/rrestart":
-    ensure => present,
+  file { '/opt/mgrep/bin/rrestart':
     mode   => '0755',
     owner  => root,
     group  => root,
     source => 'puppet:///modules/mgrep/rrestart',
   }
   if $verbose {
-    $verbose_flag = '-v'
-    $verbose_log  = '>> /var/log/mgreprestart 2>&1'
+    $verbose_flag = '-v >> /var/log/mgreprestart 2>&1'
   } else {
-    $verbose_flag = ''
-    $verbose_log = '>> /dev/null 2>&2'
+    $verbose_flag = '>> /dev/null 2>&2'
   }
-  if ( $mgrep_master == true) {
-    $cron_content = "${mgrep_cronfreq} root /usr/local/mgrep-${mgrep_version}/bin/rrestart ${verbose_flag} -m -r ${mgrep_redishost} -p ${mgrep_redisport} ${verbose_log} \n"
+  if ( $mgrep_primary == true) {
+    $cron_content = "${cron_string} root /opt/mgrep/bin/rrestart -m -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
   } else {
-    $cron_content = "${mgrep_cronfreq} root /usr/local/mgrep-${mgrep_version}/bin/rrestart ${verbose_flag} -r ${mgrep_redishost} -p ${mgrep_redisport} ${verbose_log} \n"
+    $cron_content = "${cron_string} root /opt/mgrep/bin/rrestart -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
   }
 
   file { '/etc/cron.d/mgrep-rrestart':
-    ensure  => present,
     mode    => '0644',
     content => $cron_content,
   }
 }
-

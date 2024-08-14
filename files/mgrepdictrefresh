@@ -1,10 +1,10 @@
-#!/bin/env python
+#!/usr/bin/env python3
 # Script for restarting mgrep daemon when dictionary file is updated.
 # it checks time stamp left by ncbo_cron in the redis when dictionary file is generated.
 # It should be sheduled with cron
 #
-# Requires redis python module (yum install python-redis)
-# 
+# Requires redis python module
+#
 # author: Alex Skrenchuk
 
 import time
@@ -14,7 +14,7 @@ import redis
 import sys, getopt
 
 #set default redis host
-redishost='localhost'
+redis_host='localhost'
 verbose=False
 
 # Read command line args
@@ -22,17 +22,17 @@ myopts, args = getopt.getopt(sys.argv[1:],"r:v")
 
 for o, a in myopts:
     if o == '-r':
-        redishost = a
+        redis_host = a
     if o == '-v':
         verbose = True
 
-r_server = redis.Redis(redishost)
+r_server = redis.Redis(redis_host)
 
 last_mgrep_restart_stamp = r_server.get('last_mgrep_restart_stamp')
 mgrep_dict_refresh_stamp = r_server.get('mgrep_dict_refresh_stamp')
 
 if verbose == True:
-  print ("checking dictionary generation time stamp on redis host %s" % redishost)
+  print ("checking dictionary generation time stamp on redis host %s" % redis_host)
   print ("last_mgrep_restart_stamp = %s" % last_mgrep_restart_stamp)
   print ("mgrep_dict_refresh_stamp = %s" % mgrep_dict_refresh_stamp)
 
@@ -42,7 +42,7 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp:
   ts = time.time()
   st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
   if subprocess.call(['/bin/systemctl', 'restart',  'mgrep.service']):
-    sys.exit('unable to restart mgrep service')
+    sys.exit('ERROR: failed to restart mgrep service')
   else:
     r_server.set('last_mgrep_restart_stamp', st)
 else:

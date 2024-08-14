@@ -1,13 +1,13 @@
-#!/bin/env python
+#!/usr/bin/env python3
 # Mgrep server rolling restart.
 # Script for restarting two mgrep daemons on distinct nodes when dictionary file is updated
-# it is scheduled with a cron job.
+# Script is run as a cron job.
 #
 # Logic:
-# 1. Master node detects updated dictionary file.
-# 2. Master waits until slave node detects updated dictionary file and restarts
-# 3. Slave sends message to master when restart is complete
-# 4. Master restarts and updates time stamp in redis
+# 1. Primary node detects updated dictionary file.
+# 2. Primary waits until secondary node detects updated dictionary file and restarts
+# 3. Secondary sends message to primary via redis when restart is complete
+# 4. Primary restarts and updates time stamp in redis
 #
 # Requires redis python module v2.10+ (pip install redis)
 #
@@ -17,27 +17,28 @@ import time
 import datetime
 import subprocess
 import redis
+from redis import Redis, RedisError, ConnectionError, TimeoutError
 import sys, getopt
 import socket # to get hostname
 
 # Defaults
-redishost='localhost'
-redisport='6379'
+redis_host='localhost'
+redis_port='6379'
 verbose=False
 force=False
-# runs as slave by default.
+# runs as secondary by default.
 master=False
 hostname=socket.gethostname()
-service='mgrep'
+service='mgrep.service'
 
 # Read command line args
 myopts, args = getopt.getopt(sys.argv[1:],"r:p:vfms:h")
 
 for o, a in myopts:
     if o == '-r':
-      redishost = a
+      redis_host = a
     if o == '-p':
-      redisport = a
+      redis_port = a
     if o == '-v':
       verbose = True
     if o == '-f':
@@ -47,31 +48,33 @@ for o, a in myopts:
     if o == '-s':
       service = a
     if o == '-h':
-      print ("usage: rrestart -vmf -r redis host -p redis port -s service init.d script")
-      print ("-r: redis host\n-p: redis port number\n-v: verbose\n-f: force restart without checking time stamps")
-      print ("-s: service init.d script for mgrep server\n-m: master - master node waits for slaves to comple resatrt")
-      print ("example: rrestart -m -r redishost.domain -p 6380 -s mgrep-p5556")
+      print("usage: rrestart -vmf -r redis host -p redis port -s service init.d script")
+      print("-r: redis host\n-p: redis port number\n-v: verbose\n-f: force restart without checking time stamps")
+      print("-s: service init.d script for mgrep server\n-m: master - master node waits for slaves to comple resatrt")
+      print("example: rrestart -m -r redis_host.domain -p 6380 -s mgrep-p5556")
       sys.exit()
 
-r = redis.StrictRedis(host=redishost, port=redisport)
+r = redis.StrictRedis(host=redis_host, port=redis_port)
 
 try:
   last_mgrep_restart_stamp = r.get('last_mgrep_restart_stamp')
   mgrep_dict_refresh_stamp = r.get('mgrep_dict_refresh_stamp')
-except redis.ConnectionError:
-  sys.exit("can't connect to redis running on %s" % redishost)
+except ConnectionError:
+  sys.exit("ERROR: can't connect to redis running on %s" % redis_host)
+except TimeoutError:
+  sys.exit('ERROR: Timeout connecting to redis server.')
 
 if last_mgrep_restart_stamp == None or mgrep_dict_refresh_stamp == None:
-  sys.exit('Timestamp entries are missing in redis. Perhaps it is not initiated properly.')
+  sys.exit('ERROR: Timestamp entries are missing in redis.')
 
 if verbose == True:
-  print ("checking dictionary generation timestamp on redis host %s" % redishost)
-  print ("last_mgrep_restart_stamp = %s" % last_mgrep_restart_stamp)
-  print ("mgrep_dict_refresh_stamp = %s" % mgrep_dict_refresh_stamp)
+  print("checking dictionary generation timestamp on redis host %s" % redis_host)
+  print("last_mgrep_restart_stamp = %s" % last_mgrep_restart_stamp)
+  print("mgrep_dict_refresh_stamp = %s" % mgrep_dict_refresh_stamp)
 
 if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   if verbose == True:
-    print 'dictionary update is detected, restarting mgrep'
+    print('dictionary update is detected, restarting mgrep')
   ts = time.time()
   st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -83,7 +86,7 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
     for i in range(650):
       message = p.get_message()
       if verbose == True:
-        print ("master is sleeping for %s seconds" % i)
+        print("master is sleeping for %s seconds" % i)
       if message:
         #if we get message then it means that slave mgrep is restarted
         break
@@ -104,15 +107,15 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   while not r.setnx('mgrep_restart_lock', hostname):
     lockedoutby = r.get('mgrep_restart_lock')
     if verbose == True:
-      print ("waiting for lock on %s" % lockedoutby )
+      print("waiting for lock on %s" % lockedoutby )
     time.sleep(1)
   if verbose == True:
-     print 'got the lock'
+     print('got the lock')
   r.setex('mgrep_restart_lock', 300, hostname)
   if verbose == True:
-    print ("restarting mgrep service %s" % service)
-  if subprocess.call(['/bin/systemctl', 'restart',  'mgrep.service']):
-    sys.exit('unable to restart mgrep service')
+    print("restarting mgrep service %s" % service)
+  if subprocess.call(['/bin/systemctl', 'restart', service ]):
+    sys.exit('ERROR: unable to restart mgrep service')
   else:
     r_server.set('last_mgrep_restart_stamp', st)
   time.sleep(10)
@@ -124,7 +127,7 @@ if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
   if master == True:
     r.set('last_mgrep_restart_stamp', st)
   if verbose == True:
-    print 'all done'
+    print('all done')
 else:
   if verbose == True:
-   print 'new dictionary file is NOT detected'
+   print('new dictionary file is NOT detected')
