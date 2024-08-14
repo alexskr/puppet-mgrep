@@ -12,8 +12,6 @@ After=network.target
 [Service]
 Type=forking
 ExecStart=/opt/mgrep/mgrep --port=<%= $port %> -f <%= $mgrep_dict %> -w /opt/mgrep/word_divider.txt -c /opt/mgrep/CaseFolding.txt
-StandardOutput=syslog
-StandardError=syslog
 SyslogIdentifier=mgrep
 User=<%= $user %>
 Group=<%= $group %>
