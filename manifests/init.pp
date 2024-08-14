@@ -10,7 +10,6 @@
 # Requires:
 #
 # Sample Usage:
-# if dict_symlink is specified, it creates a symlink from dict to the location specified by dict_symlink
 class mgrep (
   Boolean $mgrep_enable           = false, # service disabled by default - since we do not want to have collusion with other mgrep instances
   String $mgrep_version           = '4.0.2',
@@ -19,7 +18,6 @@ class mgrep (
   String $user                    = 'mgrep',
   String $group                   = 'mgrep',
 ) {
-
   user { 'mgrep':
     ensure     => 'present',
     system     => true,
@@ -53,11 +51,11 @@ class mgrep (
     mode   => '0755',
   }
 
-  file {"/opt/mgrep-${mgrep_version}/mgrep":
+  file { "/opt/mgrep-${mgrep_version}/mgrep":
     mode   => '0755',
     source => "puppet:///modules/mgrep/mgrep-${mgrep_version}/mgrep",
   }
-  file {'/opt/mgrep':
+  file { '/opt/mgrep':
     ensure => link,
     target => "/opt/mgrep-${mgrep_version}",
   }
@@ -65,10 +63,10 @@ class mgrep (
   systemd::unit_file { 'mgrep.service':
     ensure  => 'present',
     content => epp ('mgrep/mgrep.service.epp', {
-      'user'       => $user,
-      'group'      => $group,
-      'port'       => $port,
-      'mgrep_dict' => $dict_path,
+        'user'       => $user,
+        'group'      => $group,
+        'port'       => $port,
+        'mgrep_dict' => $dict_path,
     }),
   }
   ~> service { 'mgrep':
@@ -78,12 +76,11 @@ class mgrep (
 
   # sample dict
   file { "/var/lib/mgrep/${port}/dict":
-      ensure  => present,
-      replace => no,
-      source  => 'puppet:///modules/mgrep/sample_dictionary.txt',
-      mode    => '0664',
-      owner   => $user,
-      group   => $group,
-      before  => Service['mgrep'],
+    replace => no,
+    source  => 'puppet:///modules/mgrep/sample_dictionary.txt',
+    mode    => '0664',
+    owner   => $user,
+    group   => $group,
+    before  => Service['mgrep'],
   }
 }
