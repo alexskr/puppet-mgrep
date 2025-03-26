@@ -75,8 +75,8 @@ class mgrep (
   }
 
   # sample dict
-  file { "/var/lib/mgrep/${port}/dict":
-    replace => no,
+  file { $dict_path:
+    replace => false,
     source  => 'puppet:///modules/mgrep/sample_dictionary.txt',
     mode    => '0664',
     owner   => $user,
