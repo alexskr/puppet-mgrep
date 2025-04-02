@@ -14,6 +14,6 @@ class mgrep::dictrefresh {
     mode    => '0644',
     owner   => 'root',
     group   => 'root',
-    content => '*/5 * * * * root /opt/mgrep/bin/mgrepdictrefresh > /dev/null 2>&1'
+    content => "*/5 * * * * root /opt/mgrep/bin/mgrepdictrefresh > /dev/null 2>&1\n",
   }
 }
