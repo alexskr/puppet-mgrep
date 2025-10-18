@@ -1,5 +1,5 @@
 #
-# Class: mgrep::rrestart
+# Class: mgrep::rolling-restart
 #
 # Description: rolling restart of mgrep servers
 #
@@ -33,9 +33,9 @@ class mgrep::rolling_restart (
   }
 
   if ( $primary_node == true) {
-    $cron_content = "${cron_string} root /opt/mgrep/bin/rrestart -m -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
+    $cron_content = "${cron_string} root /opt/mgrep/bin/rolling-restart -m -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
   } else {
-    $cron_content = "${cron_string} root /opt/mgrep/bin/rrestart -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
+    $cron_content = "${cron_string} root /opt/mgrep/bin/rolling-restart -r ${redis_host} -p ${redis_port} ${verbose_flag} \n"
   }
 
   file { '/etc/cron.d/mgrep-rolling-restart':
