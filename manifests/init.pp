@@ -74,13 +74,10 @@ class mgrep (
     hasstatus => true,
   }
 
-  # sample dict
-  file { $dict_path:
-    replace => false,
-    source  => 'puppet:///modules/mgrep/sample_dictionary.txt',
-    mode    => '0664',
-    owner   => $user,
-    group   => $group,
+  # sample dictionary file
+  exec { 'create_sample_dict_file':
+    command => "/usr/bin/env bash -c 'echo -e \"00009\\tsample entry\" > ${dict_path} && chown ${user}:${group} ${dict_path} && chmod 0664 ${dict_path}'",
+    creates => $dict_path,
     before  => Service['mgrep'],
   }
 }
