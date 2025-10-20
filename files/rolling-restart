@@ -1,133 +1,202 @@
 #!/usr/bin/env python3
-# Mgrep server rolling restart.
-# Script for restarting two mgrep daemons on distinct nodes when dictionary file is updated
-# Script is run as a cron job.
+# Mgrep rolling restart controller
+#
+# Runs as a cron job to restart mgrep daemons on two nodes when the dictionary file is updated.
 #
 # Logic:
-# 1. Primary node detects updated dictionary file.
-# 2. Primary waits until secondary node detects updated dictionary file and restarts
-# 3. Secondary sends message to primary via redis when restart is complete
-# 4. Primary restarts and updates time stamp in redis
+# 1. The master node detects an updated dictionary (based on Redis timestamps).
+# 2. The master waits for the slave node to restart first.
+# 3. The slave notifies the master via Redis Pub/Sub when its restart is complete.
+# 4. The master restarts mgrep and updates the restart timestamp in Redis.
 #
-# Requires redis python module v2.10+ (pip install redis)
-#
-# author: Alex Skrenchuk
+# Author: Alex Skrenchuk
 
+import argparse
+import os
+import socket
+import sys
 import time
-import datetime
-import subprocess
+import uuid
+from datetime import datetime
+from subprocess import run
+
 import redis
-from redis import Redis, RedisError, ConnectionError, TimeoutError
-import sys, getopt
-import socket # to get hostname
+from redis.exceptions import ConnectionError, TimeoutError, RedisError
 
-# Defaults
-redis_host='localhost'
-redis_port='6379'
-verbose=False
-force=False
-# runs as secondary by default.
-master=False
-hostname=socket.gethostname()
-service='mgrep.service'
+HOSTNAME = socket.gethostname()
 
-# Read command line args
-myopts, args = getopt.getopt(sys.argv[1:],"r:p:vfms:h")
+# Redis keys
+K_LAST_RESTART = "last_mgrep_restart_stamp"     # written by this script (epoch)
+K_DICT_REFRESH = "mgrep_dict_refresh_stamp"     # written by Ruby process
 
-for o, a in myopts:
-    if o == '-r':
-      redis_host = a
-    if o == '-p':
-      redis_port = a
-    if o == '-v':
-      verbose = True
-    if o == '-f':
-      force = True
-    if o == '-m':
-      master = True
-    if o == '-s':
-      service = a
-    if o == '-h':
-      print("usage: rrestart -vmf -r redis host -p redis port -s service init.d script")
-      print("-r: redis host\n-p: redis port number\n-v: verbose\n-f: force restart without checking time stamps")
-      print("-s: service init.d script for mgrep server\n-m: master - master node waits for slaves to comple resatrt")
-      print("example: rrestart -m -r redis_host.domain -p 6380 -s mgrep-p5556")
-      sys.exit()
+PUBSUB_CHANNEL = "mgrep_restart-channel"
+LOCK_KEY = "mgrep_restart_lock"
+RUN_KEY_FMT = "mgrep_restart_runlock:{host}"
 
-r = redis.StrictRedis(host=redis_host, port=redis_port)
+UNLOCK_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+else
+  return 0
+end
+"""
 
-try:
-  last_mgrep_restart_stamp = r.get('last_mgrep_restart_stamp')
-  mgrep_dict_refresh_stamp = r.get('mgrep_dict_refresh_stamp')
-except ConnectionError:
-  sys.exit("ERROR: can't connect to redis running on %s" % redis_host)
-except TimeoutError:
-  sys.exit('ERROR: Timeout connecting to redis server.')
+def log(msg, verbose):
+    if verbose:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        print(f"{ts} [{HOSTNAME}] {msg}")
 
-if last_mgrep_restart_stamp == None or mgrep_dict_refresh_stamp == None:
-  sys.exit('ERROR: Timestamp entries are missing in redis.')
+def parse_ts(val) -> int:
+    """Accept epoch or Ruby-style 'YYYY-MM-DD HH:MM:SS -0700' timestamps."""
+    if val is None:
+        raise ValueError("missing timestamp")
+    if isinstance(val, bytes):
+        val = val.decode("utf-8", errors="strict")
+    s = str(val).strip()
 
-if verbose == True:
-  print("checking dictionary generation timestamp on redis host %s" % redis_host)
-  print("last_mgrep_restart_stamp = %s" % last_mgrep_restart_stamp)
-  print("mgrep_dict_refresh_stamp = %s" % mgrep_dict_refresh_stamp)
+    try:
+        return int(float(s))  # epoch
+    except (ValueError, TypeError):
+        pass
 
-if last_mgrep_restart_stamp < mgrep_dict_refresh_stamp or force == True:
-  if verbose == True:
-    print('dictionary update is detected, restarting mgrep')
-  ts = time.time()
-  st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S %z")
+        return int(dt.timestamp())
+    except ValueError:
+        raise ValueError(f"unsupported timestamp format: {s!r}")
 
-  p = r.pubsub(ignore_subscribe_messages=True)
-  p.subscribe('mgrep_restart-channel')
+def redis_time_seconds(r: redis.Redis) -> int:
+    secs, _ = r.time()
+    return int(secs)
 
-  if master == True:
-    # wait untill slave cron kicks off and sends a message and then restart mgrep
-    for i in range(650):
-      message = p.get_message()
-      if verbose == True:
-        print("master is sleeping for %s seconds" % i)
-      if message:
-        #if we get message then it means that slave mgrep is restarted
-        break
-      time.sleep(1)  # be nice to the system
-  else:
-    # This script is run via cron job every 5 min so
-    # we make slave sleep for 10 seconds to give master opportunity to take the lead
-    time.sleep(10)
+def acquire_lock(r, key, token, ttl, verbose) -> bool:
+    ok = r.set(key, token, nx=True, ex=ttl)
+    if ok:
+        log("acquired lock", verbose)
+    return bool(ok)
 
-  # Restart mgrep server
-  # 1. create a lock in redis to prevent two nodes restarting at the same time.
-  # we are using reis SET NX and SET EX.
-  # 2. restart mgrep
-  # 3. send a message via redis chanel that we are done restarting mgrep service
-  # 4. Master node will wait to restart mgrep untill it sees the message send by slave node
-  # 5. Master node updates the last mgrep server restart time.
+def safe_release_lock(r, key, token, verbose):
+    try:
+        r.eval(UNLOCK_LUA, 1, key, token)
+        log("released lock", verbose)
+    except RedisError:
+        log("lock release failed (TTL will clear it)", verbose)
 
-  while not r.setnx('mgrep_restart_lock', hostname):
-    lockedoutby = r.get('mgrep_restart_lock')
-    if verbose == True:
-      print("waiting for lock on %s" % lockedoutby )
-    time.sleep(1)
-  if verbose == True:
-     print('got the lock')
-  r.setex('mgrep_restart_lock', 300, hostname)
-  if verbose == True:
-    print("restarting mgrep service %s" % service)
-  if subprocess.call(['/bin/systemctl', 'restart', service ]):
-    sys.exit('ERROR: unable to restart mgrep service')
-  else:
-    r_server.set('last_mgrep_restart_stamp', st)
-  time.sleep(10)
+def ensure_single_run_per_host(r, ttl, verbose):
+    run_key = RUN_KEY_FMT.format(host=HOSTNAME)
+    if not r.set(run_key, "1", nx=True, ex=ttl):
+        raise SystemExit("another instance appears to be running on this host")
+    return run_key
 
-  r.delete('mgrep_restart_lock')
-  r.publish('mgrep_restart-channel', 'done')
+def delete_key_quiet(r, key):
+    try:
+        r.delete(key)
+    except RedisError:
+        pass
 
-  #update the timestamp for the last mgrep restart
-  if master == True:
-    r.set('last_mgrep_restart_stamp', st)
-  if verbose == True:
-    print('all done')
-else:
-  if verbose == True:
-   print('new dictionary file is NOT detected')
+def main():
+    ap = argparse.ArgumentParser(description="Mgrep rolling restart controller")
+    ap.add_argument("-r", "--redis-host", default="localhost")
+    ap.add_argument("-p", "--redis-port", type=int, default=6379)
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("-f", "--force", action="store_true", help="force restart regardless of timestamps")
+    ap.add_argument("-m", "--master", action="store_true", help="master waits for slave restart first")
+    ap.add_argument("-s", "--service", default="mgrep.service", help="systemd unit to restart")
+    ap.add_argument("--lock-ttl", type=int, default=300)
+    ap.add_argument("--run-ttl", type=int, default=600)
+    ap.add_argument("--wait-seconds", type=int, default=650)
+    args = ap.parse_args()
+
+    r = redis.Redis(host=args.redis_host, port=args.redis_port, decode_responses=True)
+
+    run_key = None
+    try:
+        run_key = ensure_single_run_per_host(r, ttl=args.run_ttl, verbose=args.verbose)
+
+        try:
+            last_raw = r.get(K_LAST_RESTART)
+            refresh_raw = r.get(K_DICT_REFRESH)
+        except (ConnectionError, TimeoutError) as e:
+            raise SystemExit(f"ERROR: Redis unavailable: {e}")
+
+        # --- Decision logic ---
+        if args.force:
+            log("force flag set; proceeding to restart", args.verbose)
+            should_restart = True
+        elif refresh_raw is None:
+            log("mgrep_dict_refresh_stamp missing; performing initial restart", args.verbose)
+            should_restart = True
+        elif last_raw is None:
+            log("last_mgrep_restart_stamp missing; skipping restart for now", args.verbose)
+            return
+        else:
+            # Parse timestamps
+            try:
+                last_i = int(last_raw)
+            except (ValueError, TypeError):
+                last_i = parse_ts(last_raw)
+            try:
+                refresh_i = parse_ts(refresh_raw)
+            except ValueError as e:
+                sys.exit(f"ERROR: bad mgrep_dict_refresh_stamp: {e}")
+
+            log(f"{K_LAST_RESTART} = {last_raw}", args.verbose)
+            log(f"{K_DICT_REFRESH} = {refresh_raw}", args.verbose)
+
+            should_restart = (last_i < refresh_i)
+
+        if not should_restart:
+            log("new dictionary file is NOT detected", args.verbose)
+            return
+
+        log("dictionary update detected (or initial/force); preparing to restart", args.verbose)
+        # --- Pub/Sub setup ---
+        p = r.pubsub(ignore_subscribe_messages=True)
+        p.subscribe("mgrep_restart-channel")
+
+        try:
+            if args.master:
+                deadline = time.monotonic() + args.wait_seconds
+                while time.monotonic() < deadline:
+                    msg = p.get_message()
+                    if msg:
+                        log("received slave completion message", args.verbose)
+                        break
+                    time.sleep(1)
+                else:
+                    log("no slave message before timeout; proceeding", args.verbose)
+            else:
+                time.sleep(10)  # give master head start
+
+            token = f"{HOSTNAME}:{os.getpid()}:{uuid.uuid4()}"
+            if not acquire_lock(r, LOCK_KEY, token, ttl=args.lock_ttl, verbose=args.verbose):
+                log("waiting for lock", args.verbose)
+                lock_deadline = time.monotonic() + args.lock_ttl
+                while time.monotonic() < lock_deadline:
+                    time.sleep(1)
+                    if acquire_lock(r, LOCK_KEY, token, ttl=args.lock_ttl, verbose=args.verbose):
+                        break
+                else:
+                    raise SystemExit("ERROR: could not acquire lock")
+
+            try:
+                log(f"restarting service {args.service}", args.verbose)
+                run(["systemctl", "restart", args.service], check=True, capture_output=True, text=True)
+                now_i = redis_time_seconds(r)
+                r.set(K_LAST_RESTART, str(now_i))
+                time.sleep(10)
+                r.publish(PUBSUB_CHANNEL, "done")
+                log("restart complete", args.verbose)
+            finally:
+                safe_release_lock(r, LOCK_KEY, token, args.verbose)
+        finally:
+            try:
+                p.close()
+            except Exception:
+                pass
+    finally:
+        if run_key:
+            delete_key_quiet(r, run_key)
+
+if __name__ == "__main__":
+    main()
