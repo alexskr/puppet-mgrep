@@ -12,7 +12,7 @@ After=network-online.target remote-fs.target
 
 [Service]
 Type=forking
-ExecStart=/opt/mgrep/mgrep --port=<%= $port %> -f <%= $mgrep_dict %> -w /opt/mgrep/word_divider.txt -c /opt/mgrep/CaseFolding.txt
+ExecStart=/opt/mgrep/bin/mgrep --port=<%= $port %> -f <%= $mgrep_dict %> -w /opt/mgrep/share/word_divider.txt -c /opt/mgrep/share/CaseFolding.txt
 SyslogIdentifier=mgrep
 User=<%= $user %>
 Group=<%= $group %>
@@ -22,4 +22,3 @@ TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
-
